@@ -10,27 +10,37 @@ export default {
 
     async function handleRequest(request) {
       const url = new URL(request.url);
-      
+
+      // Essayer de récupérer l'URL cible soit dans apiurl, soit dans le chemin
       let apiUrl = url.searchParams.get("apiurl");
-      
-      // Vérifie si le chemin après /corsproxy/ commence par http
       const pathAfterProxy = url.pathname.slice(PROXY_ENDPOINT.length);
+
       if (!apiUrl && pathAfterProxy.startsWith("http")) {
         apiUrl = pathAfterProxy;
       }
 
       if (!apiUrl) {
-        return new Response("Missing apiurl", { status: 400 });
+        return new Response(
+          JSON.stringify({
+            error:
+              "Missing target URL. Provide 'apiurl' query parameter or put the target URL after /corsproxy/",
+          }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
       }
 
-      // Recrée la requête vers l'API cible
+      // Recréer la requête vers l'API cible
       const newRequest = new Request(apiUrl, request);
       newRequest.headers.set("Origin", new URL(apiUrl).origin);
 
+      // Faire la requête
       let response = await fetch(newRequest);
-      response = new Response(response.body, response);
 
-      // Ajoute les headers CORS
+      // Ajouter les headers CORS
+      response = new Response(response.body, response);
       response.headers.set("Access-Control-Allow-Origin", url.origin);
       response.headers.append("Vary", "Origin");
 
@@ -43,15 +53,15 @@ export default {
         request.headers.get("Access-Control-Request-Method") !== null &&
         request.headers.get("Access-Control-Request-Headers") !== null
       ) {
-        // CORS preflight
         return new Response(null, {
           headers: {
             ...corsHeaders,
-            "Access-Control-Allow-Headers": request.headers.get("Access-Control-Request-Headers"),
+            "Access-Control-Allow-Headers": request.headers.get(
+              "Access-Control-Request-Headers"
+            ),
           },
         });
       } else {
-        // OPTIONS simple
         return new Response(null, {
           headers: { Allow: "GET, HEAD, POST, OPTIONS" },
         });
@@ -65,7 +75,10 @@ export default {
       } else if (["GET", "HEAD", "POST"].includes(request.method)) {
         return handleRequest(request);
       } else {
-        return new Response(null, { status: 405, statusText: "Method Not Allowed" });
+        return new Response(null, {
+          status: 405,
+          statusText: "Method Not Allowed",
+        });
       }
     } else {
       return new Response("Not found", { status: 404 });
