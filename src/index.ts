@@ -6,24 +6,27 @@ export default {
       "Access-Control-Max-Age": "86400",
     };
 
-    const PROXY_ENDPOINT = "/corsproxy/";
+    const PROXY_ENDPOINT = "/corsproxy";
 
     async function handleRequest(request) {
       const url = new URL(request.url);
 
-      // Essayer de récupérer l'URL cible soit dans apiurl, soit dans le chemin
-      let apiUrl = url.searchParams.get("apiurl");
-      const pathAfterProxy = url.pathname.slice(PROXY_ENDPOINT.length);
+      let apiUrl = null;
 
-      if (!apiUrl && pathAfterProxy.startsWith("http")) {
-        apiUrl = pathAfterProxy;
+      const pathAfterProxy = url.pathname.slice(PROXY_ENDPOINT.length);
+      if (pathAfterProxy.startsWith("/http")) {
+        // cas normal : /corsproxy/https://...
+        apiUrl = pathAfterProxy.slice(1); // enlève le slash initial
+      } else if (url.search.length > 1) {
+        // cas spécial : /corsproxy?https://...
+        apiUrl = url.search.slice(1); // enlève le ?
       }
 
       if (!apiUrl) {
         return new Response(
           JSON.stringify({
             error:
-              "Missing target URL. Provide 'apiurl' query parameter or put the target URL after /corsproxy/",
+              "Missing target URL. Put it after /corsproxy/ or as ?https://...",
           }),
           {
             status: 400,
@@ -32,14 +35,11 @@ export default {
         );
       }
 
-      // Recréer la requête vers l'API cible
       const newRequest = new Request(apiUrl, request);
       newRequest.headers.set("Origin", new URL(apiUrl).origin);
 
-      // Faire la requête
       let response = await fetch(newRequest);
 
-      // Ajouter les headers CORS
       response = new Response(response.body, response);
       response.headers.set("Access-Control-Allow-Origin", url.origin);
       response.headers.append("Vary", "Origin");
@@ -69,16 +69,17 @@ export default {
     }
 
     const url = new URL(request.url);
-    if (url.pathname.startsWith(PROXY_ENDPOINT)) {
+
+    if (
+      url.pathname === PROXY_ENDPOINT ||
+      url.pathname.startsWith(PROXY_ENDPOINT + "/")
+    ) {
       if (request.method === "OPTIONS") {
         return handleOptions(request);
       } else if (["GET", "HEAD", "POST"].includes(request.method)) {
         return handleRequest(request);
       } else {
-        return new Response(null, {
-          status: 405,
-          statusText: "Method Not Allowed",
-        });
+        return new Response(null, { status: 405, statusText: "Method Not Allowed" });
       }
     } else {
       return new Response("Not found", { status: 404 });
